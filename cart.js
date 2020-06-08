@@ -2,7 +2,7 @@ Cart = {
   items: [], 
   callbacks: {}, 
   sqlWhere: [], 
-  cols: { key: 'id', qtde: 'qtd', valor: 'preco' }, 
+  cols: { key: 'id', qtde: 'qtd', valor: 'preco', optsKey: 'id' }, 
   config: { storage: '@sacola', format: { decimals: 2 , dec_point: '.' , thousands_sep: ',', pfx: 'R$ ', sfx: '' } }
 };
 
@@ -37,15 +37,6 @@ Cart.save = function() {
 Cart.where = function(key, condition, value){
   Cart.sqlWhere.push({k: key, v: value, op: condition});
   return Cart;
-};
-
-Cart.filterWhere = function (register){
-    var isValid = true;
-    Cart.sqlWhere.forEach(function(item){
-      isValid = eval(register[item.k] +" "+ item.op +" "+ item.v);
-    });
-
-    return isValid;
 };
 
 Cart.countItems = function() {
@@ -95,13 +86,70 @@ Cart.getItems = function(){
     return lista;
 }
 
+Cart.mergeObj = function() {
+   // Variables
+   var target = {};
+   var deep = true;
+   var i = 0;
+   
+   var mergeArray = function(a, b, prop){
+    var reduced = a.filter(function(aitem){
+        return ! b.find(function(bitem){
+            return parseInt(aitem[prop]) === parseInt(bitem[prop]);
+        });
+    });
+    return reduced.concat(b);
+  }
+
+   // Merge the object into the target object
+   var merger = function(obj){
+      for (let prop in obj) {
+         if (obj.hasOwnProperty(prop)) {
+
+          if (deep && Object.prototype.toString.call(obj[prop]) === '[object Object]') {
+              target[prop] = Cart.mergeObj(target[prop], obj[prop]);
+
+          }else if (i>0 && Object.prototype.toString.call(obj[prop]) === '[object Array]') {
+              target[prop] = mergeArray(target[prop], obj[prop], Cart.cols.optsKey);
+
+          } else {
+            target[prop] = obj[prop];
+          }
+       }
+     }
+   };
+    for (; i < arguments.length; i++) {
+       merger(arguments[i]);
+    }
+    return target;
+};
+
+
 // CRUD
 Cart.get = function(){
-    return Cart.getItems().filter(Cart.filterWhere);
+    var items = Cart.getItems();
+
+    Cart.sqlWhere.forEach(function(condicao){
+      items = items.filter(function(register){
+          try {
+             return eval(register[condicao.k] +" "+ condicao.op +" "+ condicao.v);
+          }
+          catch (e) {
+             console.log("Erro ao usar o operador: '"+condicao.op+"'. ");
+             return true;
+          }
+      });
+    });
+
+    return items;
 };
 
 Cart.store = function(register){
     register[Cart.cols.key] = parseInt(register[Cart.cols.key]);
+
+    if(!register.opts){
+      register.opts = [];
+    }
 
     Cart.items.push(register);
 
@@ -110,7 +158,6 @@ Cart.store = function(register){
     return Cart;
 };
 
-
 Cart.find = function(id){
   var item = Cart.getItems().filter(function(element){
         return parseInt(element[Cart.cols.key]) === parseInt(id);
@@ -118,7 +165,6 @@ Cart.find = function(id){
   if(typeof item === "undefined") return null;
   return item;
 }
-
 
 Cart.destroy = function(id){
     var ret = false;
@@ -144,26 +190,28 @@ Cart.update = function(id, data){
 
     if(item){
 
-      var lista = Cart.getItems().filter(function(element){
-          return parseInt(element[Cart.cols.key]) !== parseInt(id);
+      var lista = Cart.getItems().map(function(element){
+          if(parseInt(element[Cart.cols.key]) === parseInt(id)){
+            element = Cart.mergeObj(element, data);
+          }
+          return element;
       });
-
       Cart.setItems(lista).save();
       ret = true;
     }
 
-    Cart.trigger('update', {item: item, destroy: ret});
+    Cart.trigger('update', {item: item, update: ret});
     return ret;
 }
 
-Cart.store({id: 2, nome: 'Produto A', preco: 10, qtd: 2}); 
-Cart.store({id: 3, nome: 'Produto B', preco: 10, qtd: 1}); 
-//Cart.store({id: 4, nome: 'Produto C', preco: 10, qtd: 1}); 
-//Cart.store({id: 5, nome: 'Produto C', preco: 10, qtd: 3});
+Cart.store({id: 2, nome: 'Produto A', preco: 2, qtd: 2}); 
+Cart.store({id: 3, nome: 'Produto B', preco: 4, qtd: 1}); 
+Cart.store({id: 4, nome: 'Produto C', preco: 6, qtd: 1}); 
+Cart.store({id: 5, nome: 'Produto D', preco: 8, qtd: 3});
 
-//Cart.where('preco', '>', 10);
+//Cart.where('preco', '==', 3);
 
-
-Cart.destroy(4);
+//Cart.update(2, {nome: 'Produto ALT', opts: [{id: 4, nome: 'Item B'}, {id: 3, nome: 'Item C'}] });
+//Cart.update(3, {opts: [{id: 4, nome: 'Item B'}] });
 
 console.log(Cart.get());
